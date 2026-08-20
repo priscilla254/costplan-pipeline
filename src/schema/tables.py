@@ -7,6 +7,10 @@ schema (mixed camelCase / PascalCase) via the first argument to
 Conventions:
 - Surrogate keys are ``INT IDENTITY(1,1)`` unless noted.
 - ``BIT``: 1 is True, 0 is False. Active flags default to 1.
+- Single-column unique / index: ``unique=True`` / ``index=True`` on
+  ``mapped_column``.
+- Table-level only in ``__table_args__``: composite unique constraints,
+  composite indexes.
 - Foreign keys are indexed unless they are already the leading column of
   a primary key or unique constraint.
 """
@@ -46,7 +50,6 @@ class DimSector(Base):
     """Lookup of project sectors (e.g. residential, education)."""
 
     __tablename__ = "DimSector"
-    __table_args__ = (UniqueConstraint("sectorCode", name="UQ_DimSector_sectorCode"),)
 
     sector_key: Mapped[int] = mapped_column(
         "sectorKey",
@@ -54,7 +57,9 @@ class DimSector(Base):
         Identity(start=1, increment=1),
         primary_key=True,
     )
-    sector_code: Mapped[str] = mapped_column("sectorCode", String(50), nullable=False)
+    sector_code: Mapped[str] = mapped_column(
+        "sectorCode", String(50), nullable=False, unique=True
+    )
     sector_name: Mapped[str] = mapped_column("sectorName", String(200), nullable=False)
     sort_order: Mapped[int | None] = mapped_column("sortOrder", Integer, nullable=True)
     is_active: Mapped[bool] = mapped_column(
@@ -69,7 +74,6 @@ class DimLocation(Base):
     """Geographic location used for location-factor lookups."""
 
     __tablename__ = "DimLocation"
-    __table_args__ = (UniqueConstraint("DisplayLabel", name="UQ_DimLocation_DisplayLabel"),)
 
     location_key: Mapped[int] = mapped_column(
         "locationKey",
@@ -81,7 +85,7 @@ class DimLocation(Base):
     region: Mapped[str | None] = mapped_column("region", String(150), nullable=True)
     # Unique when present; SQL Server still allows multiple NULLs.
     display_label: Mapped[str | None] = mapped_column(
-        "DisplayLabel", String(150), nullable=True
+        "DisplayLabel", String(150), nullable=True, unique=True
     )
     is_active: Mapped[bool] = mapped_column(
         "isActive",
@@ -95,7 +99,6 @@ class DimProject(Base):
     """Project master record: identity, location/sector, and site characteristics."""
 
     __tablename__ = "DimProject"
-    __table_args__ = (UniqueConstraint("projectID", name="UQ_DimProject_projectID"),)
 
     project_key: Mapped[int] = mapped_column(
         "projectKey",
@@ -103,7 +106,9 @@ class DimProject(Base):
         Identity(start=1, increment=1),
         primary_key=True,
     )
-    project_number: Mapped[str] = mapped_column("projectID", String(50), nullable=False)
+    project_number: Mapped[str] = mapped_column(
+        "projectID", String(50), nullable=False, unique=True
+    )
     project_name: Mapped[str] = mapped_column("projectName", String(250), nullable=False)
 
     location_key: Mapped[int] = mapped_column(
@@ -171,9 +176,6 @@ class DimContractor(Base):
     """Contractor submitting a cost set against a project."""
 
     __tablename__ = "DimContractor"
-    __table_args__ = (
-        UniqueConstraint("contractorName", name="UQ_DimContractor_contractorName"),
-    )
 
     contractor_key: Mapped[int] = mapped_column(
         "contractorKey",
@@ -182,7 +184,7 @@ class DimContractor(Base):
         primary_key=True,
     )
     contractor_name: Mapped[str] = mapped_column(
-        "contractorName", String(250), nullable=False
+        "contractorName", String(250), nullable=False, unique=True
     )
     is_active: Mapped[bool] = mapped_column(
         "IsActive",
@@ -209,11 +211,6 @@ class DimCostSet(Base):
     """
 
     __tablename__ = "DimCostSet"
-    __table_args__ = (
-        UniqueConstraint(
-            "SourceCostSetIdentifier", name="UQ_DimCostSet_SourceCostSetIdentifier"
-        ),
-    )
 
     cost_set_key: Mapped[int] = mapped_column(
         "CostSetKey",
@@ -233,7 +230,7 @@ class DimCostSet(Base):
     )
     # Idempotency key so the same source file is not ingested twice.
     source_cost_set_identifier: Mapped[str] = mapped_column(
-        "SourceCostSetIdentifier", String(120), nullable=False
+        "SourceCostSetIdentifier", String(120), nullable=False, unique=True
     )
     contractor_key: Mapped[int] = mapped_column(
         "contractorKey",
@@ -298,9 +295,6 @@ class DimQuantType(Base):
     """
 
     __tablename__ = "DimQuantType"
-    __table_args__ = (
-        UniqueConstraint("QuantTypeCode", name="UQ_DimQuantType_QuantTypeCode"),
-    )
 
     quant_type_key: Mapped[int] = mapped_column(
         "QuantTypeKey",
@@ -309,7 +303,7 @@ class DimQuantType(Base):
         primary_key=True,
     )
     quant_type_code: Mapped[str] = mapped_column(
-        "QuantTypeCode", String(50), nullable=False
+        "QuantTypeCode", String(50), nullable=False, unique=True
     )
     quant_type_name: Mapped[str] = mapped_column(
         "QuantTypeName", String(200), nullable=False
@@ -331,9 +325,6 @@ class DimElementSystem(Base):
     """Element breakdown standard, e.g. NRM or AIQS."""
 
     __tablename__ = "DimElementSystem"
-    __table_args__ = (
-        UniqueConstraint("SystemName", name="UQ_DimElementSystem_SystemName"),
-    )
 
     element_system_key: Mapped[int] = mapped_column(
         "ElementSystemKey",
@@ -341,7 +332,9 @@ class DimElementSystem(Base):
         Identity(start=1, increment=1),
         primary_key=True,
     )
-    system_name: Mapped[str] = mapped_column("SystemName", String(100), nullable=False)
+    system_name: Mapped[str] = mapped_column(
+        "SystemName", String(100), nullable=False, unique=True
+    )
     country: Mapped[str | None] = mapped_column("Country", String(50), nullable=True)
     country_code: Mapped[str] = mapped_column("CountryCode", CHAR(2), nullable=False)
     is_active: Mapped[bool] = mapped_column(
@@ -497,7 +490,6 @@ class DimTPI(Base):
     """
 
     __tablename__ = "DimTPI"
-    __table_args__ = (UniqueConstraint("TPICode", name="UQ_DimTPI_TPICode"),)
 
     tpi_key: Mapped[int] = mapped_column(
         "TPIKey",
@@ -505,7 +497,9 @@ class DimTPI(Base):
         Identity(start=1, increment=1),
         primary_key=True,
     )
-    tpi_code: Mapped[str] = mapped_column("TPICode", String(50), nullable=False)
+    tpi_code: Mapped[str] = mapped_column(
+        "TPICode", String(50), nullable=False, unique=True
+    )
     tpi_name: Mapped[str] = mapped_column("TPIName", String(200), nullable=False)
     provider: Mapped[str | None] = mapped_column("Provider", String(100), nullable=True)
     country_code: Mapped[str] = mapped_column("CountryCode", CHAR(2), nullable=False)
@@ -552,11 +546,6 @@ class DimLocationFactor(Base):
     """Location-factor series (provider, country, and base location)."""
 
     __tablename__ = "DimLocationFactor"
-    __table_args__ = (
-        UniqueConstraint(
-            "LocationFactorCode", name="UQ_DimLocationFactor_LocationFactorCode"
-        ),
-    )
 
     location_factor_key: Mapped[int] = mapped_column(
         "LocationFactorKey",
@@ -565,7 +554,7 @@ class DimLocationFactor(Base):
         primary_key=True,
     )
     location_factor_code: Mapped[str] = mapped_column(
-        "LocationFactorCode", String(50), nullable=False
+        "LocationFactorCode", String(50), nullable=False, unique=True
     )
     location_factor_name: Mapped[str] = mapped_column(
         "LocationFactorName", String(200), nullable=False
