@@ -8,7 +8,9 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    azure_sql_connection_string: str
+    sql_server_connection_string: str
+    landing_dir: str = "data/landing"
+    process_adjustments: bool = False
 
 
 settings = Settings()

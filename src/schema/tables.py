@@ -19,6 +19,7 @@ from sqlalchemy import (
     Date,
     ForeignKey,
     Identity,
+    Index,
     Integer,
     Numeric,
     String,
@@ -35,6 +36,82 @@ class Base(DeclarativeBase):
     """Declarative base shared by every table in this module."""
 
     pass
+
+
+# ---------------------------------------------------------------------------
+# Ingest control (audit of landing → gold, not bronze payload)
+# ---------------------------------------------------------------------------
+
+
+class IngestionLog(Base):
+    """One attempt to ingest a source cost-plan file.
+
+    Status is RECEIVED, VALIDATED, FAILED, or COMMITTED. ``CostSetKey`` is
+    set only after a successful gold write.
+    """
+
+    __tablename__ = "IngestionLog"
+
+    ingestion_key: Mapped[int] = mapped_column(
+        "ingestionKey",
+        Integer,
+        Identity(start=1, increment=1),
+        primary_key=True,
+    )
+    source_cost_set_identifier: Mapped[str] = mapped_column(
+        "SourceCostSetIdentifier",
+        String(250),
+        nullable=False,
+        index=True,
+    )
+    # Azure Blob path once Azure is set up.
+    source_file_path: Mapped[str] = mapped_column(
+        "sourceFilePath", String(500), nullable=False
+    )
+    status: Mapped[str] = mapped_column("status", String(20), nullable=False)
+    cost_set_key: Mapped[int | None] = mapped_column(
+        "CostSetKey",
+        Integer,
+        ForeignKey("DimCostSet.CostSetKey"),
+        nullable=True,
+        index=True,
+    )
+    received_at: Mapped[datetime] = mapped_column(
+        "receivedAt",
+        DATETIME2(0),
+        nullable=False,
+        server_default=func.sysutcdatetime(),
+    )
+    updated_at: Mapped[datetime | None] = mapped_column(
+        "updatedAt", DATETIME2(0), nullable=True
+    )
+
+
+class StagingValidationError(Base):
+    """Row-level reject from validating a landed workbook against ingest rules."""
+
+    __tablename__ = "StagingValidationError"
+
+    error_key: Mapped[int] = mapped_column(
+        "errorKey",
+        Integer,
+        Identity(start=1, increment=1),
+        primary_key=True,
+    )
+    ingestion_key: Mapped[int] = mapped_column(
+        "ingestionKey",
+        Integer,
+        ForeignKey("IngestionLog.ingestionKey"),
+        nullable=False,
+        index=True,
+    )
+    sheet_name: Mapped[str | None] = mapped_column(
+        "sheetName", String(100), nullable=True
+    )
+    row_num: Mapped[int | None] = mapped_column("rowNum", Integer, nullable=True)
+    error_message: Mapped[str] = mapped_column(
+        "errorMessage", String(1000), nullable=False
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -204,14 +281,20 @@ class DimContractor(Base):
 class DimCostSet(Base):
     """One cost submission for a project, contractor, and cost stage.
 
-    Re-uploads of the same source file are keyed by ``SourceCostSetIdentifier``.
-    ``isCurrent`` marks the active submission for that combination.
+    Re-uploads of the same project + contractor + cost stage insert a new row
+    and set the previous current row's ``isCurrent`` to 0. A filtered unique
+    index allows only one current row per that grain.
     """
 
     __tablename__ = "DimCostSet"
     __table_args__ = (
-        UniqueConstraint(
-            "SourceCostSetIdentifier", name="UQ_DimCostSet_SourceCostSetIdentifier"
+        Index(
+            "UQ_DimCostSet_ProjectContractorStage_current",
+            "projectKey",
+            "contractorKey",
+            "CostStage",
+            unique=True,
+            mssql_where=text("isCurrent = 1"),
         ),
     )
 
@@ -231,9 +314,9 @@ class DimCostSet(Base):
     cost_stage: Mapped[str | None] = mapped_column(
         "CostStage", String(50), nullable=True
     )
-    # Idempotency key so the same source file is not ingested twice.
+    # Lineage string: projectId|normalizedContractor|normalizedCostStage
     source_cost_set_identifier: Mapped[str] = mapped_column(
-        "SourceCostSetIdentifier", String(120), nullable=False
+        "SourceCostSetIdentifier", String(250), nullable=False
     )
     contractor_key: Mapped[int] = mapped_column(
         "contractorKey",
