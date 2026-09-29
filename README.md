@@ -17,7 +17,7 @@ Parsers never import ORM models. Gold load happens only after validation and dim
 
 Workbook tabs are classified by alias (`Project Information - 1`, NRM L3 sheets, and so on). Required base sheets are project information, project quants, L2 element quants, and summary. Adjustments are off unless `PROCESS_ADJUSTMENTS=true`.
 
-`DimCostSet` grain is project + contractor + cost stage. A re-upload of the same grain sets the previous row `isCurrent = 0` and inserts a new current row. `SourceCostSetIdentifier` is the lineage string `projectId|normalizedContractor|normalizedCostStage`.
+`DimCostSet` is uniquely identified by `(projectKey, contractorKey, CostStage)` — the project number lives on `DimProject`. A re-upload of the same grain updates that row and replaces its fact rows. `IngestionLog.SourceCostSetIdentifier` is still the audit lineage string `projectId|normalizedContractor|normalizedCostStage`.
 
 Sectors, locations, contractors, L2 elements, and quant types are **lookup-only**. Ingest will not create them. Seed those tables before loading a workbook.
 

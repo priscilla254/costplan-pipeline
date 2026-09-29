@@ -14,10 +14,20 @@ from src.schema.tables import (
     DimProject,
     FactCostAdjustment,
     FactCostSetProjectQuant,
+    FactCostSetSummary,
     FactElementCostL2,
     FactElementQuantL2,
     FactLineItemL3,
     IngestionLog,
+)
+
+_FACT_TABLES = (
+    FactElementCostL2,
+    FactLineItemL3,
+    FactCostSetSummary,
+    FactCostAdjustment,
+    FactCostSetProjectQuant,
+    FactElementQuantL2,
 )
 
 
@@ -29,6 +39,13 @@ def _as_date(value) -> date | None:
     if isinstance(value, date):
         return value
     return None
+
+
+def _replace_facts(session: Session, cost_set_key: int) -> None:
+    for table in _FACT_TABLES:
+        session.query(table).filter(table.cost_set_key == cost_set_key).delete(
+            synchronize_session=False
+        )
 
 
 def load_gold(
@@ -79,39 +96,39 @@ def load_gold(
         project.location_key = keys.location_key
         project.sector_key = keys.sector_key
 
-    prior = (
+    cost_stage = header.cost_stage or ""
+    currency = (header.currency or "GBP")[:3]
+    cost_set = (
         session.query(DimCostSet)
         .filter(
             DimCostSet.project_key == project.project_key,
             DimCostSet.contractor_key == keys.contractor_key,
-            DimCostSet.cost_stage == header.cost_stage,
-            DimCostSet.is_current.is_(True),
+            DimCostSet.cost_stage == cost_stage,
         )
         .one_or_none()
     )
-    if prior is not None:
-        prior.is_current = False
+    if cost_set is None:
+        cost_set = DimCostSet(
+            project_key=project.project_key,
+            cost_stage=cost_stage,
+            contractor_key=keys.contractor_key,
+        )
+        session.add(cost_set)
+        session.flush()
+    else:
+        _replace_facts(session, cost_set.cost_set_key)
 
-    currency = (header.currency or "GBP")[:3]
-    cost_set = DimCostSet(
-        project_key=project.project_key,
-        cost_stage=header.cost_stage,
-        source_cost_set_identifier=identifier,
-        contractor_key=keys.contractor_key,
-        is_selected_contractor=True,
-        data_status=header.data_status or "Loaded",
-        base_date=_as_date(header.base_date),
-        currency=currency,
-        programme_length_in_weeks=header.programme_length_in_weeks,
-        programme_type=header.programme_type,
-        gifa=header.gifa,
-        prelims_included=None,
-        prof_fees_included=None,
-        source_file=source_file_name[:260],
-        is_current=True,
-    )
-    session.add(cost_set)
-    session.flush()
+    cost_set.is_selected_contractor = True
+    cost_set.data_status = header.data_status or "Loaded"
+    cost_set.base_date = _as_date(header.base_date)
+    cost_set.currency = currency
+    cost_set.programme_length_in_weeks = header.programme_length_in_weeks
+    cost_set.programme_type = header.programme_type
+    cost_set.gifa = header.gifa
+    cost_set.prelims_included = None
+    cost_set.prof_fees_included = None
+    cost_set.source_file = source_file_name[:260]
+    cost_set.uploaded_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
     seen_l2: set[int] = set()
     for cost in data.l2_costs:

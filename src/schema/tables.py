@@ -281,20 +281,18 @@ class DimContractor(Base):
 class DimCostSet(Base):
     """One cost submission for a project, contractor, and cost stage.
 
-    Re-uploads of the same project + contractor + cost stage insert a new row
-    and set the previous current row's ``isCurrent`` to 0. A filtered unique
-    index allows only one current row per that grain.
+    Natural key is ``(projectKey, contractorKey, CostStage)``. ``CostSetKey``
+    is a surrogate PK for fact FKs. A re-upload of the same grain updates
+    this row in place and replaces child facts.
     """
 
     __tablename__ = "DimCostSet"
     __table_args__ = (
-        Index(
-            "UQ_DimCostSet_ProjectContractorStage_current",
+        UniqueConstraint(
             "projectKey",
             "contractorKey",
             "CostStage",
-            unique=True,
-            mssql_where=text("isCurrent = 1"),
+            name="UQ_DimCostSet_ProjectContractorStage",
         ),
     )
 
@@ -309,14 +307,9 @@ class DimCostSet(Base):
         Integer,
         ForeignKey("DimProject.projectKey"),
         nullable=False,
-        index=True,
     )
-    cost_stage: Mapped[str | None] = mapped_column(
-        "CostStage", String(50), nullable=True
-    )
-    # Lineage string: projectId|normalizedContractor|normalizedCostStage
-    source_cost_set_identifier: Mapped[str] = mapped_column(
-        "SourceCostSetIdentifier", String(250), nullable=False
+    cost_stage: Mapped[str] = mapped_column(
+        "CostStage", String(50), nullable=False
     )
     contractor_key: Mapped[int] = mapped_column(
         "contractorKey",
@@ -359,12 +352,6 @@ class DimCostSet(Base):
         DATETIME2(0),
         nullable=False,
         server_default=func.sysutcdatetime(),
-    )
-    is_current: Mapped[bool] = mapped_column(
-        "isCurrent",
-        BIT,
-        nullable=False,
-        server_default=text("1"),
     )
 
 
